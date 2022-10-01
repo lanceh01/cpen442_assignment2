@@ -224,12 +224,8 @@ double hill_climb(key_struct_t* key, const std::string &ciphertext, const std::u
             old_max = max;
         }
 
-        if (stuck > 1000){
+        if (stuck > 300){
             break;
-        }
-
-        if (attempt % 1000 == 0){
-            std::cout << max << std::endl;
         }
     }
     return max;
@@ -295,9 +291,10 @@ int main(){
     for (int resets = 0; resets = MAX_RESETS; resets++){
         key_struct_t key = gen_key();
         double score = hill_climb(&key,ciphertext,trigram_freq);
-        std::cout << score << std::endl;
+        std::cout << max << std::endl;
         if (score < max){
             best_key = key;
+            max = score;
         }
     }
     std::cout << decrypt(&best_key, ciphertext);
