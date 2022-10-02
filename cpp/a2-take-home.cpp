@@ -12,9 +12,9 @@
 #include <math.h>
 
 
-#define MAX_RESETS  3000000
+#define MAX_RESETS 1000000
 #define MAX__CLIMB_ATTEMPTS 1000000
-#define STUCK 300
+#define STUCK 500
 #define LOG_PROBABILITY
 
 double DEFAULT_FREQ = log(1.0/4224127912.0);
