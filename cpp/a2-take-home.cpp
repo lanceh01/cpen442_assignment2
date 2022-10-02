@@ -12,11 +12,9 @@
 #include <math.h>
 
 
-#define MAX_ATTEMPTS 50000
 #define MAX_RESETS  3000000
-#define MAX_TEMP 100
 #define MAX__CLIMB_ATTEMPTS 1000000
-#define HILL_CLIMB
+#define STUCK 300
 #define LOG_PROBABILITY
 
 double DEFAULT_FREQ = log(1.0/4224127912.0);
@@ -254,7 +252,7 @@ double hill_climb(key_struct_t* key, const std::string &ciphertext, const std::u
             old_max = max;
         }
 
-        if (stuck > 300){
+        if (stuck > STUCK){
             break;
         }
     }
@@ -336,5 +334,4 @@ int main(){
         }
     }
     std::cout << decrypt(&best_key, ciphertext_g);
-
 }
