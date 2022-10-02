@@ -9,12 +9,17 @@
 #include <fstream>
 #include <iomanip>
 #include <signal.h>
+#include <math.h>
 
 
-#define MAX_ATTEMPTS 3000000
+#define MAX_ATTEMPTS 50000
 #define MAX_RESETS  3000000
+#define MAX_TEMP 100
+#define MAX__CLIMB_ATTEMPTS 1000000
+#define HILL_CLIMB
+#define LOG_PROBABILITY
 
-
+double DEFAULT_FREQ = log(1.0/4224127912.0);
 
 
 // Set that supports getting statistically random elements in the set in O(1). Retrieved from https://leetcode.com/problems/insert-delete-getrandom-o1/discuss/85422/AC-C%2B%2B-Solution.-Unordered_map-%2B-Vector
@@ -91,22 +96,36 @@ std::string decrypt(key_struct_t* key, const std::string &ciphertext){
     return plaintext;
 }
 
-double chisquare(const std::string &text,const std::unordered_map<std::string, double> &expected_frequency) {
-    std::unordered_map<std::string,double> observed_frequency;
-
-    for (int i = 0; i < text.length()-3; i++){
-        observed_frequency[text.substr(i,3)] += 1;
-    }
-
-    double sum = 0.0;
-    for (auto& kv: expected_frequency){
-        double observed_occurrences = observed_frequency[kv.first] / text.length() / 3.0;
-        double diff = observed_occurrences - kv.second;
-        double diff_sq = diff*diff;
-        sum += diff_sq / kv.second;
-    }
+double get_score(const std::string &text,const std::unordered_map<std::string, double> &expected_frequency) {
+    double sum = 0;
+    #ifdef LOG_PROBABILITY
+        for (int i = 0; i < text.length()-4; i++){
+            std::string ngram = text.substr(i,4);
+            auto iter = expected_frequency.find(ngram);
+            if (iter != expected_frequency.end())
+                sum += iter->second;
+            else {
+                sum += DEFAULT_FREQ;
+            }
+        }
+    #else
+        std::unordered_map<std::string, double> observed_frequency;
+        for (int i = 0; i < text.length()-3; i++){
+            observed_frequency[text.substr(i,3)] += 1;
+        }
+        for (auto& kv: expected_frequency){
+            double observed_occurrences = observed_frequency[kv.first] / text.length() / 3.0;
+            double diff = observed_occurrences - kv.second;
+            double diff_sq = diff*diff;
+            sum += diff_sq / kv.second;
+        }
+    #endif
     return sum;
 }
+
+
+key_struct_t best_key;
+std::string ciphertext_g;
 
 key_struct_t gen_key(){
     key_struct_t key_struct;
@@ -177,47 +196,58 @@ void swap_col(key_struct_t* key, int col0, int col1){
     }
 }
 
+void flip_y(key_struct_t* key){
+    swap_row(key,0,4);
+    swap_row(key,1,3);
+}
+
+void flip_x(key_struct_t* key){
+    swap_col(key,0,4);
+    swap_col(key,1,3);
+}
+
+void random_mutate(key_struct_t* key, int choice, int coords[4]){
+    switch(choice){
+        case 0:
+            swap_row(key,coords[0],coords[1]);
+            break;
+        case 1:
+            swap_col(key,coords[0],coords[1]);
+            break;
+        case 2:
+            flip_y(key);
+            break;
+        case 3: 
+            flip_x(key);
+            break;
+        default:
+            swap_char(key,coords);
+    }
+}
+
 double hill_climb(key_struct_t* key, const std::string &ciphertext, const std::unordered_map<std::string, double> &freq){
-    double max = std::numeric_limits<double>::infinity();
-    double old_max = std::numeric_limits<double>::infinity();
+    double max = -std::numeric_limits<double>::infinity();
+    double old_max = -std::numeric_limits<double>::infinity();
     double score;
     int stuck;
     std::cout << "New State" << std::endl;
-    for (long attempt = 0; attempt < MAX_ATTEMPTS; attempt++){
+    for (long attempt = 0; attempt < MAX__CLIMB_ATTEMPTS; attempt++){
         int coords[4];
         for (int i = 0; i < 4; i++){
             coords[i] = rand() % 5;
         }
 
-        int choice = rand() % 25;
-        switch(choice){
-            case 0:
-                swap_row(key,coords[0],coords[1]);
-                break;
-            case 1:
-                swap_col(key,coords[0],coords[1]);
-                break;
-            default:
-                swap_char(key,coords);
-        }
+        int choice = rand() % 45;
+        random_mutate(key,choice,coords);
         std::string plaintext = decrypt(key,ciphertext);
-        score = chisquare(plaintext,freq);
-        if (score > max){
-            switch(choice){
-            case 0:
-                swap_row(key,coords[0],coords[1]);
-                break;
-            case 1:
-                swap_col(key,coords[0],coords[1]);
-                break;
-            default:
-                swap_char(key,coords);
-        }
+        score = get_score(plaintext,freq);
+        if (score < max){
+            random_mutate(key,choice,coords);
         } else {
             max = score;
         }
 
-        if (old_max-max < 2){
+        if (max-old_max < 2){
             stuck++;
         } else {
             stuck = 0;
@@ -232,36 +262,40 @@ double hill_climb(key_struct_t* key, const std::string &ciphertext, const std::u
 }
 
 std::unordered_map<std::string,double> parse(){
-std::string txt_line;
-  long total_occurrences = 0;
-  std::unordered_map<std::string, double> trigram_percents;
+    std::string txt_line;
+    long total_occurrences = 0;
+    std::unordered_map<std::string, double> trigram_percents;
 
-  // Read from the text file
-  std::ifstream MyReadFile("english_trigrams.txt");
+    // Read from the text file
+    std::ifstream MyReadFile("english_quadgrams.txt");
 
-  // Use a while loop together with the getline() function to read the file line by line
-  while (std::getline(MyReadFile, txt_line)) {
-    int pos = txt_line.find(" ");
-    std::string trigram = txt_line.substr(0, pos);
-    std::string num_occurrences_str = txt_line.substr(pos + 1);
-    int occurrences = std::stoi(num_occurrences_str);
-    total_occurrences += occurrences;
-    trigram_percents[trigram] = (double) occurrences;
-  }
+    // Use a while loop together with the getline() function to read the file line by line
+    while (std::getline(MyReadFile, txt_line)) {
+        int pos = txt_line.find(" ");
+        std::string trigram = txt_line.substr(0, pos);
+        std::string num_occurrences_str = txt_line.substr(pos + 1);
+        int occurrences = std::stoi(num_occurrences_str);
+        total_occurrences += occurrences;
+        trigram_percents[trigram] = (double) occurrences;
+    }
+    std::cout << total_occurrences << std::endl;
 
-  for (std::pair<std::string, double> x: trigram_percents) {
-    trigram_percents[x.first] = x.second / total_occurrences;
-  }
+    for (std::pair<std::string, double> x: trigram_percents) {
+        trigram_percents[x.first] = log(x.second / (double) total_occurrences);
+    }
 
-  MyReadFile.close();
-  return trigram_percents;
+    MyReadFile.close();
+    return trigram_percents;
 }
 
-key_struct_t best_key;
-std::string ciphertext;
-
 void signal_handler(int signum){
-    std::cout << decrypt(&best_key, ciphertext) << std::endl;
+    std::cout << decrypt(&best_key, ciphertext_g) << std::endl;
+    std::cout << "Key" << std::endl;
+    for (int i = 0; i < 5; i++){
+        for (int j = 0; j < 5; j++){
+            std::cout << best_key.key[i][j];
+        }
+    }
     exit(signum);
 }
 
@@ -280,22 +314,27 @@ int main(){
     }
 
     ciphertext_s[num_char] = 0;
-    ciphertext = std::string(ciphertext_s);
+    ciphertext_g = std::string(ciphertext_s);
+
+    std::string t = "THEREWASNOTHINGSOVERYREMARKABLEINTHATNORDIDALICETHINKITSOVERYMUCHOUTOFTHEWAYTOHEARTHERABBITSAYTOITSELFCOMMAOHDEAROHDEARISHALLBELATEWHENSHETHOUGHTITOVERAFTERWARDSCOMMAITOCCURREDTOHERTHATSHEOUGHTTOHAVEWONDEREDATTHISCOMMABUTATTHETIMEITALLSEEMEDQUITENATURALBUTWHENTHERABBITACTUALLYTOOKAWATCHOUTOFITSWAISTCOATPOCKETCOMMAANDLOOKEDATITCOMMAANDTHENHURRIEDONCOMMAALICESTARTEDTOHERFEETCOMMAFORITFLASHEDACROSSHERMINDTHATSHEHADNEVERBEFORESEENARABBITWITHEITHERAWAISTCOATPOCKETCOMMAORAWATCHTOTAKEOUTOFITCOMMAANDBURNINGWITHCURIOSITYCOMMASHERANACROSSTHEFIELDAFTERITCOMMAANDFORTUNATELYWASJUSTINTIMETOSEEITPOPDOWNALARGERABBITHOLEUNDERTHEHEDGE";
+
 
     std::unordered_map<std::string,double> trigram_freq = parse();
+    std::cout << get_score(t,trigram_freq) << std::endl;
 
-    double max = std::numeric_limits<double>::infinity();
+    double max = -std::numeric_limits<double>::infinity();
 
     signal(SIGINT,signal_handler);
     
     for (int resets = 0; resets = MAX_RESETS; resets++){
         key_struct_t key = gen_key();
-        double score = hill_climb(&key,ciphertext,trigram_freq);
+        double score = hill_climb(&key,ciphertext_g,trigram_freq);
         std::cout << max << std::endl;
-        if (score < max){
+        if (score > max){
             best_key = key;
             max = score;
         }
     }
-    std::cout << decrypt(&best_key, ciphertext);
+    std::cout << decrypt(&best_key, ciphertext_g);
+
 }
